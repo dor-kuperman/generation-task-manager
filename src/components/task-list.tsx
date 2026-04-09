@@ -12,7 +12,7 @@ export function TaskList() {
   const [page, setPage] = useState(0);
   const limit = 20;
 
-  const { tasks, total, loading, error, refetch } = useTasks({
+  const { tasks, total, loading, error } = useTasks({
     status,
     priority,
     limit,

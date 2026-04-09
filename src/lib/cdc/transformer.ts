@@ -1,4 +1,4 @@
-import type { CdcEvent, TaskDocument, CdcOperation } from '../types';
+import type { CdcEvent, TaskDocument } from '../types';
 
 interface TransformResult {
   action: 'index' | 'delete';

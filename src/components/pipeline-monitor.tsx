@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { useSSE } from '@/hooks/use-sse';
 import { Card, CardContent, CardHeader } from './ui/card';
 import { Badge } from './ui/badge';
@@ -23,6 +24,13 @@ export function PipelineMonitor() {
     url: '/api/sse/pipeline',
     events: ['cdc_event', 'connected'],
   });
+
+  const [now, setNow] = useState(Date.now);
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -50,7 +58,7 @@ export function PipelineMonitor() {
             <div>
               <p className="text-2xl font-bold text-gray-900">
                 {eventLog.length > 0
-                  ? `${((Date.now() - eventLog[eventLog.length - 1].timestamp) / 1000).toFixed(0)}s`
+                  ? `${((now - eventLog[eventLog.length - 1].timestamp) / 1000).toFixed(0)}s`
                   : '-'}
               </p>
               <p className="text-sm text-gray-500">Since Last Event</p>

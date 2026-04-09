@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/toast';
 import type { User, UserRole } from '@/lib/types';
 

@@ -16,12 +16,14 @@ export function useSSE<T = unknown>({ url, events = [], enabled = true }: UseSSE
   const [eventLog, setEventLog] = useState<Array<{ type: string; data: T; timestamp: number }>>([]);
   const sourceRef = useRef<EventSource | null>(null);
 
-  const connect = useCallback(() => {
+  const eventsKey = events.join(',');
+
+  useEffect(() => {
     if (!enabled) return;
 
+    const eventNames = eventsKey.split(',').filter(Boolean);
     const source = new EventSource(url);
     sourceRef.current = source;
-    setStatus('connecting');
 
     source.onopen = () => setStatus('open');
     source.onerror = () => setStatus('error');
@@ -37,22 +39,17 @@ export function useSSE<T = unknown>({ url, events = [], enabled = true }: UseSSE
       }
     };
 
-    if (events.length > 0) {
-      events.forEach((eventName) => source.addEventListener(eventName, handler));
+    if (eventNames.length > 0) {
+      eventNames.forEach((name) => source.addEventListener(name, handler));
     } else {
       source.onmessage = handler;
     }
 
     return () => {
       source.close();
-      setStatus('closed');
+      sourceRef.current = null;
     };
-  }, [url, events, enabled]);
-
-  useEffect(() => {
-    const cleanup = connect();
-    return cleanup;
-  }, [connect]);
+  }, [url, enabled, eventsKey]);
 
   const clearLog = useCallback(() => setEventLog([]), []);
 

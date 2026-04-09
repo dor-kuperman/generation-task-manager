@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod/v4';
-import { authenticate, authenticateWithPermission } from '@/lib/auth/middleware';
+import { authenticateWithPermission } from '@/lib/auth/middleware';
 import { isAdmin } from '@/lib/auth/rbac';
 import { listTasks, createTask } from '@/lib/db/queries/tasks';
 import { handleError, ValidationError } from '@/lib/errors';

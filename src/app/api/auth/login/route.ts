@@ -43,7 +43,8 @@ export async function POST(request: NextRequest) {
 
     const token = await createSession({ id: user.id, role: user.role, email: user.email });
 
-    const { password: _, ...safeUser } = user;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { password: _pw, ...safeUser } = user;
     const response = NextResponse.json({ user: safeUser });
     response.cookies.set(setSessionCookie(token));
     return response;
