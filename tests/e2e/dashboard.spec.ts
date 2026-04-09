@@ -13,19 +13,19 @@ test.describe('Dashboard', () => {
 
   test('navigates between pages via sidebar', async ({ page }) => {
     // Tasks page
-    await expect(page.locator('h1')).toContainText('Tasks');
+    await expect(page.locator('main h1')).toContainText('Tasks');
 
     // Analytics page
     await page.click('a:has-text("Analytics")');
-    await expect(page.locator('h1')).toContainText('Analytics');
+    await expect(page.locator('main h1')).toContainText('Analytics');
 
     // Pipeline page
     await page.click('a:has-text("Pipeline")');
-    await expect(page.locator('h1')).toContainText('CDC Pipeline');
+    await expect(page.locator('main h1')).toContainText('CDC Pipeline');
 
     // Back to Tasks
     await page.click('a:has-text("Tasks")');
-    await expect(page.locator('h1')).toContainText('Tasks');
+    await expect(page.locator('main h1')).toContainText('Tasks');
   });
 
   test('shows empty state when no tasks', async ({ page }) => {

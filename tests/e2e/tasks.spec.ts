@@ -23,7 +23,7 @@ test.describe('Task CRUD', () => {
     await page.click('button[type="submit"]');
 
     // Should redirect to task detail
-    await expect(page.locator('h1')).toContainText('Edit Task');
+    await expect(page.locator('main h1')).toContainText('Edit Task');
     await expect(page.locator('input[id="title"]')).toHaveValue('E2E Test Task');
 
     // Edit

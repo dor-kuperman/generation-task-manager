@@ -15,7 +15,7 @@ test.describe('Authentication', () => {
     await page.fill('input[name="password"]', testUser.password);
     await page.click('button[type="submit"]');
     await page.waitForURL('/tasks');
-    await expect(page.locator('h1')).toContainText('Tasks');
+    await expect(page.locator('main h1')).toContainText('Tasks');
 
     // Logout
     await page.click('text=Log out');
@@ -26,7 +26,7 @@ test.describe('Authentication', () => {
     await page.fill('input[name="password"]', testUser.password);
     await page.click('button[type="submit"]');
     await page.waitForURL('/tasks');
-    await expect(page.locator('h1')).toContainText('Tasks');
+    await expect(page.locator('main h1')).toContainText('Tasks');
   });
 
   test('redirects unauthenticated users to login', async ({ page }) => {
