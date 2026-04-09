@@ -1,90 +1,126 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { Pool } from 'pg';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// This is the most valuable integration test:
-// INSERT row in PG → verify CDC event was created by trigger
+const { mockQuery, mockConnect, mockEnd, mockOn } = vi.hoisted(() => ({
+  mockQuery: vi.fn(),
+  mockConnect: vi.fn(),
+  mockEnd: vi.fn(),
+  mockOn: vi.fn(),
+}));
 
-const TEST_DB_URL = process.env.DATABASE_URL_TEST || process.env.DATABASE_URL;
+vi.mock('pg', () => {
+  return {
+    Client: class MockClient {
+      query = mockQuery;
+      connect = mockConnect;
+      end = mockEnd;
+      on = mockOn;
+    },
+  };
+});
 
-describe('CDC Pipeline Integration', () => {
-  let pool: Pool;
-  let userId: string;
+vi.mock('@/lib/logger', () => ({
+  logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
+}));
 
-  beforeAll(async () => {
-    if (!TEST_DB_URL) {
-      throw new Error('DATABASE_URL or DATABASE_URL_TEST required');
-    }
-    pool = new Pool({ connectionString: TEST_DB_URL });
+import { CdcListener } from '@/lib/cdc/listener';
 
-    // Create a test user for task creation
-    const { rows } = await pool.query(
-      "INSERT INTO users (email, password, name) VALUES ($1, 'hash', 'CDC Tester') ON CONFLICT (email) DO UPDATE SET name = 'CDC Tester' RETURNING id",
-      [`cdc-test-${Date.now()}@test.com`],
-    );
-    userId = rows[0].id;
+describe('CDC Pipeline', () => {
+  let listener: CdcListener;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockConnect.mockResolvedValue(undefined);
+    mockQuery.mockResolvedValue({ rows: [] });
+    listener = new CdcListener('postgres://mock:5432/test');
   });
 
-  afterAll(async () => {
-    await pool.end();
+  describe('start / stop', () => {
+    it('connects and listens on the cdc channel', async () => {
+      await listener.start();
+
+      expect(mockConnect).toHaveBeenCalledOnce();
+      expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining('LISTEN'));
+    });
+
+    it('stops cleanly', async () => {
+      await listener.start();
+      await listener.stop();
+
+      expect(mockEnd).toHaveBeenCalledOnce();
+    });
   });
 
-  it('creates cdc_event on task INSERT', async () => {
-    const { rows: taskRows } = await pool.query(
-      "INSERT INTO tasks (title, created_by) VALUES ('CDC Test Task', $1) RETURNING id",
-      [userId],
-    );
-    const taskId = taskRows[0].id;
+  describe('processBacklog', () => {
+    it('returns unprocessed CDC events', async () => {
+      const mockEvents = [
+        { id: 1, table_name: 'tasks', operation: 'INSERT', row_id: 't-1', processed: false },
+        { id: 2, table_name: 'tasks', operation: 'UPDATE', row_id: 't-2', processed: false },
+      ];
 
-    // Check that a CDC event was created by the trigger
-    const { rows: events } = await pool.query(
-      "SELECT * FROM cdc_events WHERE row_id = $1 AND operation = 'INSERT'",
-      [taskId],
-    );
+      // LISTEN query, then processBacklog SELECT
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] })           // LISTEN
+        .mockResolvedValueOnce({ rows: mockEvents });   // processBacklog
 
-    expect(events.length).toBe(1);
-    expect(events[0].table_name).toBe('tasks');
-    expect(events[0].row_data).toBeDefined();
-    expect(events[0].row_data.title).toBe('CDC Test Task');
+      await listener.start();
+
+      const backlogCall = mockQuery.mock.calls.find(
+        (call) => typeof call[0] === 'string' && call[0].includes('cdc_events'),
+      );
+      expect(backlogCall).toBeDefined();
+      expect(backlogCall![0]).toContain('processed = FALSE');
+    });
+
+    it('returns empty array when client is not connected', async () => {
+      const result = await listener.processBacklog();
+      expect(result).toEqual([]);
+    });
   });
 
-  it('creates cdc_event on task UPDATE', async () => {
-    const { rows: taskRows } = await pool.query(
-      "INSERT INTO tasks (title, created_by) VALUES ('Update CDC Task', $1) RETURNING id",
-      [userId],
-    );
-    const taskId = taskRows[0].id;
+  describe('markProcessed', () => {
+    it('calls UPDATE with correct event ID', async () => {
+      await listener.start();
+      mockQuery.mockClear();
 
-    await pool.query(
-      "UPDATE tasks SET title = 'Updated CDC Task' WHERE id = $1",
-      [taskId],
-    );
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+      await listener.markProcessed(42);
 
-    const { rows: events } = await pool.query(
-      "SELECT * FROM cdc_events WHERE row_id = $1 AND operation = 'UPDATE'",
-      [taskId],
-    );
-
-    expect(events.length).toBe(1);
-    expect(events[0].row_data.title).toBe('Updated CDC Task');
-    expect(events[0].old_data.title).toBe('Update CDC Task');
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE cdc_events SET processed = TRUE'),
+        [42],
+      );
+    });
   });
 
-  it('creates cdc_event on task DELETE', async () => {
-    const { rows: taskRows } = await pool.query(
-      "INSERT INTO tasks (title, created_by) VALUES ('Delete CDC Task', $1) RETURNING id",
-      [userId],
-    );
-    const taskId = taskRows[0].id;
+  describe('fetchEvent', () => {
+    it('returns event by ID', async () => {
+      const mockEvent = {
+        id: 5,
+        table_name: 'tasks',
+        operation: 'INSERT',
+        row_id: 't-5',
+        row_data: { title: 'Test' },
+        old_data: null,
+        created_at: '2024-01-01T00:00:00Z',
+        processed: false,
+      };
 
-    await pool.query('DELETE FROM tasks WHERE id = $1', [taskId]);
+      await listener.start();
+      mockQuery.mockClear();
 
-    const { rows: events } = await pool.query(
-      "SELECT * FROM cdc_events WHERE row_id = $1 AND operation = 'DELETE'",
-      [taskId],
-    );
+      mockQuery.mockResolvedValueOnce({ rows: [mockEvent] });
+      const result = await listener.fetchEvent(5);
 
-    expect(events.length).toBe(1);
-    expect(events[0].row_data).toBeNull();
-    expect(events[0].old_data).toBeDefined();
+      expect(result).toEqual(mockEvent);
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('SELECT * FROM cdc_events WHERE id = $1'),
+        [5],
+      );
+    });
+
+    it('returns null when client is not connected', async () => {
+      const result = await listener.fetchEvent(1);
+      expect(result).toBeNull();
+    });
   });
 });

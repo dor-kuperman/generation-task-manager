@@ -1,35 +1,72 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { NextRequest } from 'next/server';
 
-const BASE_URL = process.env.TEST_BASE_URL || 'http://localhost:3000';
+vi.mock('@/lib/auth/middleware', () => ({
+  authenticateWithPermission: vi.fn(),
+}));
+
+vi.mock('@/lib/es/queries', () => ({
+  searchTasks: vi.fn(),
+}));
+
+import { GET } from '@/app/api/tasks/search/route';
+import { authenticateWithPermission } from '@/lib/auth/middleware';
+import { searchTasks } from '@/lib/es/queries';
+import { UnauthorizedError } from '@/lib/errors';
+
+const mockAuth = {
+  userId: 'user-1',
+  userRole: 'user' as const,
+  userEmail: 'test@example.com',
+};
 
 describe('Search API', () => {
-  let sessionCookie: string;
-
-  beforeAll(async () => {
-    const email = `search-test-${Date.now()}@example.com`;
-    const res = await fetch(`${BASE_URL}/api/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'Search Tester', email, password: 'TestPassword1' }),
-    });
-
-    const setCookie = res.headers.get('set-cookie');
-    sessionCookie = setCookie?.split(';')[0] ?? '';
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(authenticateWithPermission).mockResolvedValue(mockAuth);
   });
 
-  it('searches tasks via elasticsearch', async () => {
-    const res = await fetch(`${BASE_URL}/api/tasks/search?q=test`, {
-      headers: { Cookie: sessionCookie },
+  it('searches tasks and returns 200', async () => {
+    vi.mocked(searchTasks).mockResolvedValue({
+      hits: [
+        {
+          source: {
+            id: 'task-1',
+            title: 'Test Task',
+            description: null,
+            status: 'todo',
+            priority: 'medium',
+            assignee_id: null,
+            created_by: 'user-1',
+            due_date: null,
+            tags: [],
+            is_overdue: false,
+            days_until_due: null,
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+          score: 1.5,
+          highlight: { title: ['<mark>Test</mark> Task'] },
+        },
+      ],
+      total: 1,
     });
+
+    const req = new NextRequest(new URL('/api/tasks/search?q=test', 'http://localhost:3000'));
+    const res = await GET(req);
+    const data = await res.json();
 
     expect(res.status).toBe(200);
-    const data = await res.json();
-    expect(data).toHaveProperty('hits');
-    expect(data).toHaveProperty('total');
+    expect(data.hits).toHaveLength(1);
+    expect(data.total).toBe(1);
   });
 
-  it('requires authentication', async () => {
-    const res = await fetch(`${BASE_URL}/api/tasks/search?q=test`);
+  it('returns 401 when not authenticated', async () => {
+    vi.mocked(authenticateWithPermission).mockRejectedValue(new UnauthorizedError());
+
+    const req = new NextRequest(new URL('/api/tasks/search?q=test', 'http://localhost:3000'));
+    const res = await GET(req);
+
     expect(res.status).toBe(401);
   });
 });

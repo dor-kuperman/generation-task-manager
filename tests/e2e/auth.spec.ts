@@ -4,7 +4,7 @@ test.describe('Authentication', () => {
   const testUser = {
     name: 'E2E Test User',
     email: `e2e-auth-${Date.now()}@example.com`,
-    password: 'testpassword123',
+    password: 'Testpassword123',
   };
 
   test('register → login → dashboard → logout', async ({ page }) => {

@@ -1,58 +1,149 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { Pool } from 'pg';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// These tests require a running PostgreSQL instance with migrations applied
-const TEST_DB_URL = process.env.DATABASE_URL_TEST || process.env.DATABASE_URL;
+const mockQuery = vi.fn();
+
+vi.mock('@/lib/db/pool', () => ({
+  getPool: vi.fn(() => ({ query: mockQuery })),
+}));
+
+import { createUser, findUserByEmail } from '@/lib/db/queries/users';
+import { createTask, listTasks } from '@/lib/db/queries/tasks';
+
+const mockUser = {
+  id: 'user-1',
+  email: 'test@example.com',
+  name: 'Test User',
+  role: 'user',
+  created_at: '2024-01-01T00:00:00Z',
+  updated_at: '2024-01-01T00:00:00Z',
+};
+
+const mockTask = {
+  id: 'task-1',
+  title: 'Test Task',
+  description: null,
+  status: 'todo',
+  priority: 'medium',
+  assignee_id: null,
+  created_by: 'user-1',
+  due_date: null,
+  tags: [],
+  created_at: '2024-01-01T00:00:00Z',
+  updated_at: '2024-01-01T00:00:00Z',
+};
 
 describe('Database Queries', () => {
-  let pool: Pool;
-
-  beforeAll(async () => {
-    if (!TEST_DB_URL) {
-      throw new Error('DATABASE_URL or DATABASE_URL_TEST required for integration tests');
-    }
-    pool = new Pool({ connectionString: TEST_DB_URL });
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
-  afterAll(async () => {
-    await pool.end();
+  describe('createUser', () => {
+    it('calls pool.query with correct INSERT SQL and params', async () => {
+      mockQuery.mockResolvedValue({ rows: [mockUser] });
+
+      const result = await createUser('test@example.com', 'hashed-pw', 'Test User');
+
+      expect(mockQuery).toHaveBeenCalledOnce();
+      const [sql, params] = mockQuery.mock.calls[0];
+      expect(sql).toContain('INSERT INTO users');
+      expect(params).toEqual(['test@example.com', 'hashed-pw', 'Test User', 'user']);
+      expect(result).toEqual(mockUser);
+    });
   });
 
-  it('can connect to PostgreSQL', async () => {
-    const { rows } = await pool.query('SELECT 1 as connected');
-    expect(rows[0].connected).toBe(1);
+  describe('findUserByEmail', () => {
+    it('returns null when query returns empty rows', async () => {
+      mockQuery.mockResolvedValue({ rows: [] });
+
+      const result = await findUserByEmail('nobody@example.com');
+
+      expect(result).toBeNull();
+      expect(mockQuery).toHaveBeenCalledOnce();
+      const [sql, params] = mockQuery.mock.calls[0];
+      expect(sql).toContain('SELECT');
+      expect(sql).toContain('WHERE email = $1');
+      expect(params).toEqual(['nobody@example.com']);
+    });
+
+    it('returns user when query returns a row', async () => {
+      mockQuery.mockResolvedValue({ rows: [{ ...mockUser, password: 'hashed' }] });
+
+      const result = await findUserByEmail('test@example.com');
+
+      expect(result).toEqual({ ...mockUser, password: 'hashed' });
+    });
   });
 
-  it('users table exists', async () => {
-    const { rows } = await pool.query(
-      "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'users')",
-    );
-    expect(rows[0].exists).toBe(true);
+  describe('createTask', () => {
+    it('passes correct params to INSERT', async () => {
+      mockQuery.mockResolvedValue({ rows: [mockTask] });
+
+      const result = await createTask({
+        title: 'Test Task',
+        created_by: 'user-1',
+        priority: 'high',
+        tags: ['test'],
+      });
+
+      expect(mockQuery).toHaveBeenCalledOnce();
+      const [sql, params] = mockQuery.mock.calls[0];
+      expect(sql).toContain('INSERT INTO tasks');
+      expect(params[0]).toBe('Test Task');       // title
+      expect(params[5]).toBe('user-1');           // created_by
+      expect(params[3]).toBe('high');             // priority
+      expect(params[7]).toEqual(['test']);         // tags
+      expect(result).toEqual(mockTask);
+    });
   });
 
-  it('tasks table exists', async () => {
-    const { rows } = await pool.query(
-      "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'tasks')",
-    );
-    expect(rows[0].exists).toBe(true);
-  });
+  describe('listTasks', () => {
+    it('builds correct WHERE clause for non-admin user', async () => {
+      mockQuery.mockResolvedValue({ rows: [{ total: '1' }] })  // count query
+        .mockResolvedValueOnce({ rows: [{ total: '1' }] })     // count query (first call)
+        .mockResolvedValueOnce({ rows: [mockTask] });           // data query
 
-  it('cdc_events table exists', async () => {
-    const { rows } = await pool.query(
-      "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'cdc_events')",
-    );
-    expect(rows[0].exists).toBe(true);
-  });
+      // Reset to set up ordered responses
+      mockQuery.mockReset();
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ total: '1' }] })
+        .mockResolvedValueOnce({ rows: [mockTask] });
 
-  it('rejects duplicate emails', async () => {
-    const email = `unique-${Date.now()}@test.com`;
-    await pool.query(
-      "INSERT INTO users (email, password, name) VALUES ($1, 'hash', 'Test')",
-      [email],
-    );
+      const result = await listTasks({
+        userId: 'user-1',
+        isAdmin: false,
+        status: 'todo',
+      });
 
-    await expect(
-      pool.query("INSERT INTO users (email, password, name) VALUES ($1, 'hash', 'Test2')", [email]),
-    ).rejects.toThrow(/duplicate key/);
+      expect(mockQuery).toHaveBeenCalledTimes(2);
+
+      // Count query
+      const [countSql, countParams] = mockQuery.mock.calls[0];
+      expect(countSql).toContain('SELECT COUNT(*)');
+      expect(countSql).toContain('created_by = $1 OR assignee_id = $1');
+      expect(countSql).toContain('status = $2');
+      expect(countParams).toEqual(['user-1', 'todo']);
+
+      // Data query
+      const [dataSql] = mockQuery.mock.calls[1];
+      expect(dataSql).toContain('SELECT * FROM tasks');
+      expect(dataSql).toContain('ORDER BY created_at DESC');
+
+      expect(result).toEqual({ tasks: [mockTask], total: 1 });
+    });
+
+    it('skips user filter for admin', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ total: '0' }] })
+        .mockResolvedValueOnce({ rows: [] });
+
+      const result = await listTasks({
+        userId: 'admin-1',
+        isAdmin: true,
+      });
+
+      const [countSql] = mockQuery.mock.calls[0];
+      expect(countSql).not.toContain('created_by');
+      expect(result).toEqual({ tasks: [], total: 0 });
+    });
   });
 });

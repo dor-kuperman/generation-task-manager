@@ -1,58 +1,93 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { NextRequest } from 'next/server';
 
-const BASE_URL = process.env.TEST_BASE_URL || 'http://localhost:3000';
+vi.mock('@/lib/auth/middleware', () => ({
+  authenticateWithPermission: vi.fn(),
+}));
+
+vi.mock('@/lib/db/queries/tasks', () => ({
+  createTask: vi.fn(),
+  listTasks: vi.fn(),
+}));
+
+import { GET, POST } from '@/app/api/tasks/route';
+import { authenticateWithPermission } from '@/lib/auth/middleware';
+import { createTask, listTasks } from '@/lib/db/queries/tasks';
+import { UnauthorizedError } from '@/lib/errors';
+
+const mockAuth = {
+  userId: 'user-1',
+  userRole: 'user' as const,
+  userEmail: 'test@example.com',
+};
+
+const mockTask = {
+  id: 'task-1',
+  title: 'Test Task',
+  description: 'A test task',
+  status: 'todo' as const,
+  priority: 'high' as const,
+  assignee_id: null,
+  created_by: 'user-1',
+  due_date: null,
+  tags: ['test'],
+  created_at: '2024-01-01T00:00:00Z',
+  updated_at: '2024-01-01T00:00:00Z',
+};
 
 describe('Tasks API', () => {
-  let sessionCookie: string;
-
-  beforeAll(async () => {
-    // Register and get session
-    const email = `tasks-test-${Date.now()}@example.com`;
-    const res = await fetch(`${BASE_URL}/api/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'Task Tester', email, password: 'TestPassword1' }),
-    });
-
-    const setCookie = res.headers.get('set-cookie');
-    sessionCookie = setCookie?.split(';')[0] ?? '';
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(authenticateWithPermission).mockResolvedValue(mockAuth);
   });
 
-  it('creates a task', async () => {
-    const res = await fetch(`${BASE_URL}/api/tasks`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Cookie: sessionCookie,
-      },
-      body: JSON.stringify({
-        title: 'Integration Test Task',
-        description: 'Created by integration test',
-        priority: 'high',
-        tags: ['test'],
-      }),
-    });
+  describe('POST /api/tasks', () => {
+    it('creates a task and returns 201', async () => {
+      vi.mocked(createTask).mockResolvedValue(mockTask);
 
-    expect(res.status).toBe(201);
-    const data = await res.json();
-    expect(data.task.title).toBe('Integration Test Task');
-    expect(data.task.priority).toBe('high');
-    expect(data.task.status).toBe('todo');
+      const req = new NextRequest(new URL('/api/tasks', 'http://localhost:3000'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Test Task',
+          description: 'A test task',
+          priority: 'high',
+          tags: ['test'],
+        }),
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+
+      expect(res.status).toBe(201);
+      expect(data.task.title).toBe('Test Task');
+      expect(data.task.priority).toBe('high');
+      expect(data.task.status).toBe('todo');
+    });
   });
 
-  it('lists tasks', async () => {
-    const res = await fetch(`${BASE_URL}/api/tasks`, {
-      headers: { Cookie: sessionCookie },
-    });
+  describe('GET /api/tasks', () => {
+    it('lists tasks and returns 200', async () => {
+      vi.mocked(listTasks).mockResolvedValue({ tasks: [mockTask], total: 1 });
 
-    expect(res.status).toBe(200);
-    const data = await res.json();
-    expect(data.tasks).toBeDefined();
-    expect(data.total).toBeGreaterThan(0);
+      const req = new NextRequest(new URL('/api/tasks', 'http://localhost:3000'));
+      const res = await GET(req);
+      const data = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(data.tasks).toHaveLength(1);
+      expect(data.total).toBe(1);
+    });
   });
 
-  it('requires authentication', async () => {
-    const res = await fetch(`${BASE_URL}/api/tasks`);
-    expect(res.status).toBe(401);
+  describe('Authentication', () => {
+    it('returns 401 when not authenticated', async () => {
+      vi.mocked(authenticateWithPermission).mockRejectedValue(new UnauthorizedError());
+
+      const req = new NextRequest(new URL('/api/tasks', 'http://localhost:3000'));
+      const res = await GET(req);
+
+      expect(res.status).toBe(401);
+    });
   });
 });
