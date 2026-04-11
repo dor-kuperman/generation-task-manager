@@ -4,13 +4,14 @@ import { authenticateWithPermission } from '@/lib/auth/middleware';
 import { isAdmin } from '@/lib/auth/rbac';
 import { getTaskById, updateTask, deleteTask, canAccessTask } from '@/lib/db/queries/tasks';
 import { handleError, NotFoundError, ForbiddenError, ValidationError } from '@/lib/errors';
+import { withLogging } from '@/lib/api/with-logging';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export const GET = withLogging(async (request: NextRequest, context?) => {
   try {
     const auth = await authenticateWithPermission(request, 'tasks:read');
-    const { id } = await params;
+    const { id } = await (context as RouteParams).params;
     const task = await getTaskById(id);
 
     if (!task) throw new NotFoundError('Task');
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   } catch (error) {
     return handleError(error);
   }
-}
+});
 
 const updateTaskSchema = z.object({
   title: z.string().min(1).max(255).optional(),
@@ -35,10 +36,10 @@ const updateTaskSchema = z.object({
   tags: z.array(z.string()).optional(),
 });
 
-export async function PATCH(request: NextRequest, { params }: RouteParams) {
+export const PATCH = withLogging(async (request: NextRequest, context?) => {
   try {
     const auth = await authenticateWithPermission(request, 'tasks:update');
-    const { id } = await params;
+    const { id } = await (context as RouteParams).params;
 
     if (!isAdmin(auth.userRole) && !(await canAccessTask(id, auth.userId, false))) {
       throw new ForbiddenError('You do not have access to this task');
@@ -58,12 +59,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   } catch (error) {
     return handleError(error);
   }
-}
+});
 
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+export const DELETE = withLogging(async (request: NextRequest, context?) => {
   try {
     const auth = await authenticateWithPermission(request, 'tasks:delete');
-    const { id } = await params;
+    const { id } = await (context as RouteParams).params;
 
     if (!isAdmin(auth.userRole) && !(await canAccessTask(id, auth.userId, false))) {
       throw new ForbiddenError('You do not have access to this task');
@@ -76,4 +77,4 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
   } catch (error) {
     return handleError(error);
   }
-}
+});

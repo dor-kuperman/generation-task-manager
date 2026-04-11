@@ -5,6 +5,7 @@ import { createSession, setSessionCookie } from '@/lib/auth/session';
 import { findUserByEmail } from '@/lib/db/queries/users';
 import { checkRateLimit } from '@/lib/auth/rate-limit';
 import { handleError, UnauthorizedError, ValidationError } from '@/lib/errors';
+import { withLogging } from '@/lib/api/with-logging';
 
 // Pre-computed dummy hash to compare against when user is not found (timing attack mitigation)
 const DUMMY_HASH = '$2b$12$LJ3m4ys3Lk0TSwHilHmOC.8mHngyOsEwYjnKZbG6qB3QhRbSAUbm';
@@ -14,7 +15,7 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
-export async function POST(request: NextRequest) {
+export const POST = withLogging(async (request: NextRequest) => {
   try {
     const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
     const { allowed, retryAfterMs } = checkRateLimit(`login:${ip}`);
@@ -51,4 +52,4 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     return handleError(error);
   }
-}
+});

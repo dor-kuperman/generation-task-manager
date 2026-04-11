@@ -3,8 +3,9 @@ import { authenticateWithPermission } from '@/lib/auth/middleware';
 import { isAdmin } from '@/lib/auth/rbac';
 import { getAnalytics } from '@/lib/es/queries';
 import { handleError } from '@/lib/errors';
+import { withLogging } from '@/lib/api/with-logging';
 
-export async function GET(request: NextRequest) {
+export const GET = withLogging(async (request: NextRequest) => {
   try {
     const auth = await authenticateWithPermission(request, 'tasks:read');
     const aggregations = await getAnalytics(auth.userId, isAdmin(auth.userRole));
@@ -12,4 +13,4 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     return handleError(error);
   }
-}
+});

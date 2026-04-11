@@ -5,6 +5,7 @@ import { createSession, setSessionCookie } from '@/lib/auth/session';
 import { createUser } from '@/lib/db/queries/users';
 import { checkRateLimit } from '@/lib/auth/rate-limit';
 import { handleError, ConflictError, ValidationError } from '@/lib/errors';
+import { withLogging } from '@/lib/api/with-logging';
 
 const registerSchema = z.object({
   email: z.email(),
@@ -17,7 +18,7 @@ const registerSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100),
 });
 
-export async function POST(request: NextRequest) {
+export const POST = withLogging(async (request: NextRequest) => {
   try {
     const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
     const { allowed, retryAfterMs } = checkRateLimit(`register:${ip}`);
@@ -57,4 +58,4 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     return handleError(error);
   }
-}
+});

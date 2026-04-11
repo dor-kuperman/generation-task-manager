@@ -4,6 +4,7 @@ import { authenticateWithPermission } from '@/lib/auth/middleware';
 import { isAdmin } from '@/lib/auth/rbac';
 import { searchTasks } from '@/lib/es/queries';
 import { handleError, ValidationError } from '@/lib/errors';
+import { withLogging } from '@/lib/api/with-logging';
 import type { TaskStatus, TaskPriority } from '@/lib/types';
 
 const searchParamsSchema = z.object({
@@ -16,7 +17,7 @@ const searchParamsSchema = z.object({
   size: z.coerce.number().int().min(1).max(100).default(20),
 });
 
-export async function GET(request: NextRequest) {
+export const GET = withLogging(async (request: NextRequest) => {
   try {
     const auth = await authenticateWithPermission(request, 'tasks:read');
     const params = request.nextUrl.searchParams;
@@ -53,4 +54,4 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     return handleError(error);
   }
-}
+});

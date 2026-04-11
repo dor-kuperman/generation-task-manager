@@ -26,11 +26,12 @@ export function NavSidebar() {
         <p className="text-xs text-gray-400 mt-0.5">Generation Task Manager</p>
       </div>
 
-      <nav className="flex-1 p-3 space-y-1">
+      <nav aria-label="Main navigation" className="flex-1 p-3 space-y-1">
         {navItems.map((item) => (
           <Link
             key={item.href}
             href={item.href}
+            aria-current={pathname.startsWith(item.href) ? 'page' : undefined}
             className={`block px-3 py-2 rounded-md text-sm transition-colors ${
               pathname.startsWith(item.href)
                 ? 'bg-gray-800 text-white'
@@ -48,6 +49,7 @@ export function NavSidebar() {
               <Link
                 key={item.href}
                 href={item.href}
+                aria-current={pathname.startsWith(item.href) ? 'page' : undefined}
                 className={`block px-3 py-2 rounded-md text-sm transition-colors ${
                   pathname.startsWith(item.href)
                     ? 'bg-gray-800 text-white'

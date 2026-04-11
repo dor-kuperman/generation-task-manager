@@ -4,6 +4,7 @@ import { authenticateWithPermission } from '@/lib/auth/middleware';
 import { isAdmin } from '@/lib/auth/rbac';
 import { listTasks, createTask } from '@/lib/db/queries/tasks';
 import { handleError, ValidationError } from '@/lib/errors';
+import { withLogging } from '@/lib/api/with-logging';
 
 const listQuerySchema = z.object({
   status: z.enum(['todo', 'in_progress', 'done', 'archived']).optional(),
@@ -12,7 +13,7 @@ const listQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).optional().default(0),
 });
 
-export async function GET(request: NextRequest) {
+export const GET = withLogging(async (request: NextRequest) => {
   try {
     const auth = await authenticateWithPermission(request, 'tasks:read');
     const params = Object.fromEntries(request.nextUrl.searchParams);
@@ -32,7 +33,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     return handleError(error);
   }
-}
+});
 
 const createTaskSchema = z.object({
   title: z.string().min(1).max(255),
@@ -44,7 +45,7 @@ const createTaskSchema = z.object({
   tags: z.array(z.string()).optional(),
 });
 
-export async function POST(request: NextRequest) {
+export const POST = withLogging(async (request: NextRequest) => {
   try {
     const auth = await authenticateWithPermission(request, 'tasks:create');
     const body = await request.json();
@@ -59,4 +60,4 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     return handleError(error);
   }
-}
+});
