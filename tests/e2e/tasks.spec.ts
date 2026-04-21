@@ -30,9 +30,9 @@ test.describe('Task CRUD', () => {
     await page.fill('input[id="title"]', 'Updated E2E Task');
     await page.click('button[type="submit"]');
 
-    // Delete
+    // Delete (click Delete button, then confirm inside dialog)
     await page.click('text=Delete');
-    await page.click('button:has-text("Delete"):not(:has-text("Cancel"))');
+    await page.locator('dialog button:has-text("Delete")').click();
     await page.waitForURL('/tasks');
   });
 });

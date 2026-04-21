@@ -9,7 +9,7 @@ export function getPool(): Pool {
       max: 20,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000,
-      ...(process.env.NODE_ENV === 'production' && {
+      ...(process.env.NODE_ENV === 'production' && process.env.DATABASE_SSL !== 'false' && {
         ssl: { rejectUnauthorized: true },
       }),
     });

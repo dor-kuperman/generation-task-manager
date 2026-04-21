@@ -18,7 +18,7 @@ test.describe('Authentication', () => {
     await expect(page.locator('main h1')).toContainText('Tasks');
 
     // Logout
-    await page.click('text=Log out');
+    await page.getByRole('button', { name: 'Log out' }).click();
     await page.waitForURL('/login');
 
     // Login
